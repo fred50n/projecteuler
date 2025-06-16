@@ -57,7 +57,7 @@ function saveProgress() {
 
 // Busca os problemas do CSV
 async function fetchProblems() {
-    const url = "https://projecteuler.net/minimal=problems;csv";
+    const url = `https://projecteuler.net/minimal=${currentProblemId}`;
     // Usamos um proxy para evitar problemas de CORS (bloqueio de requisição entre domínios)
     const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
     
@@ -92,7 +92,8 @@ function displayCurrentProblem() {
         .replace(/<br\s*\/?>/gi, '\n');
 
     document.getElementById("problem-title").textContent = `Problema ${id}: ${title}`;
-    document.getElementById("problem-description").textContent = description.trim();
+    document.getElementById("problem-description").textContent = problemsArray;
+    // description.trim()
 }
 
 // Abre a página do problema no site oficial
