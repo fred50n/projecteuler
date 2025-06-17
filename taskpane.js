@@ -1,109 +1,89 @@
+// taskpane.js - Versão que busca problemas individualmente
+
 // Aguarda o ambiente do Office estar pronto
 Office.onReady(info => {
     if (info.host === Office.HostType.Excel) {
-        // Inicializa a aplicação
         initializeApp();
     }
 });
 
-let problemsArray = [];
 let currentProblemId = 1;
 
 async function initializeApp() {
-    // Adiciona os listeners aos botões
+    // Associa nossas funções aos cliques dos botões
     document.getElementById("verify-button").onclick = openProblemOnWeb;
     document.getElementById("next-problem-button").onclick = goToNextProblem;
-    document.getElementById("loading").textContent = "Buscando problemas do Project Euler...";
+
+    await loadProgress();           // 1. Carrega o ID do último problema salvo
+    await fetchAndDisplayProblem(); // 2. Busca e exibe o problema atual
+}
+
+// Carrega o progresso salvo nas configurações deste documento
+function loadProgress() {
+    return new Promise(resolve => {
+        const savedId = Office.context.document.settings.get('euler_currentProblemId');
+        if (savedId) {
+            currentProblemId = parseInt(savedId, 10);
+        }
+        resolve();
+    });
+}
+
+// Salva o progresso atual no arquivo
+function saveProgress() {
+    Office.context.document.settings.set('euler_currentProblemId', currentProblemId);
+    Office.context.document.settings.saveAsync();
+}
+
+/**
+ * Esta é a nova função principal. Ela busca um único problema e o exibe na tela.
+ */
+async function fetchAndDisplayProblem() {
+    const titleElement = document.getElementById("problem-title");
+    const descriptionElement = document.getElementById("problem-description");
+    const loadingElement = document.getElementById("loading-message");
+
+    titleElement.textContent = `Carregando Problema #${currentProblemId}...`;
+    descriptionElement.textContent = "";
+    loadingElement.textContent = "Buscando na web...";
 
     try {
-        await loadProgress(); // Carrega o progresso salvo
-        await fetchProblems(); // Busca os problemas da web
-        displayCurrentProblem(); // Exibe o problema atual
-        document.getElementById("loading").textContent = "";
+        const url = `https://projecteuler.net/minimal=${currentProblemId}`;
+        // Continuamos usando um proxy para evitar problemas de segurança do navegador (CORS)
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+        
+        const response = await fetch(proxyUrl);
+        if (!response.ok) throw new Error("Falha na rede ao buscar o problema.");
+
+        const data = await response.json();
+        const problemText = data.contents;
+
+        // O texto vem no formato: "ID. Título\n\nDescrição..."
+        // Vamos separar o título da descrição
+        const lines = problemText.split('\n');
+        const problemTitle = lines[0]; // A primeira linha é sempre o título
+        const problemDescription = lines.slice(2).join('\n'); // O resto (após uma linha em branco) é a descrição
+
+        titleElement.textContent = problemTitle;
+        descriptionElement.textContent = problemDescription.trim();
+
     } catch (error) {
-        console.error(error);
-        document.getElementById("problem-title").textContent = "Erro!";
-        document.getElementById("problem-description").textContent = "Não foi possível carregar os problemas. Verifique o console para mais detalhes.";
-        document.getElementById("loading").textContent = "";
+        console.error("Erro ao buscar problema:", error);
+        titleElement.textContent = "Erro ao Carregar";
+        descriptionElement.textContent = `Não foi possível buscar o problema #${currentProblemId}. Verifique sua conexão ou tente novamente.`;
+    } finally {
+        loadingElement.textContent = "";
     }
 }
 
-// Carrega o progresso salvo nas configurações do documento
-function loadProgress() {
-    return new Promise((resolve, reject) => {
-        Office.context.document.settings.refreshAsync(result => {
-            if (result.status === Office.AsyncResultStatus.Succeeded) {
-                const savedId = Office.context.document.settings.get('currentProblemId');
-                if (savedId) {
-                    currentProblemId = parseInt(savedId, 10);
-                }
-                resolve();
-            } else {
-                reject('Erro ao carregar configurações: ' + result.error.message);
-            }
-        });
-    });
-}
-
-// Salva o progresso atual
-function saveProgress() {
-    Office.context.document.settings.set('currentProblemId', currentProblemId);
-    Office.context.document.settings.saveAsync(result => {
-        if (result.status !== Office.AsyncResultStatus.Succeeded) {
-            console.error('Erro ao salvar progresso: ' + result.error.message);
-        }
-    });
-}
-
-// Busca os problemas do CSV
-async function fetchProblems() {
-    const url = `https://projecteuler.net/minimal=${currentProblemId}`;
-    // Usamos um proxy para evitar problemas de CORS (bloqueio de requisição entre domínios)
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-    
-    const response = await fetch(proxyUrl);
-    if (!response.ok) {
-        throw new Error("Falha na rede ao buscar problemas.");
-    }
-    const data = await response.json();
-    problemsArray = data.contents.split('\n').filter(line => line); // Filtra linhas vazias
-}
-
-// Exibe o problema atual na tela
-function displayCurrentProblem() {
-    if (currentProblemId > problemsArray.length) {
-        document.getElementById("problem-title").textContent = "Parabéns!";
-        document.getElementById("problem-description").textContent = "Você completou todos os problemas disponíveis.";
-        return;
-    }
-
-    const problemLine = problemsArray[currentProblemId - 1];
-    // O CSV é um pouco inconsistente, então limpamos bem os dados
-    const problemData = problemLine.split('","').map(item => item.replace(/"/g, ''));
-
-    const id = problemData[0];
-    const title = problemData[1];
-    let description = problemData.slice(2).join(',');
-
-    // Limpa tags HTML da descrição para melhor visualização
-    description = description
-        .replace(/<p>/gi, '\n\n')
-        .replace(/<\/p>/gi, '')
-        .replace(/<br\s*\/?>/gi, '\n');
-
-    document.getElementById("problem-title").textContent = `Problema ${id}: ${title}`;
-    document.getElementById("problem-description").textContent = problemsArray;
-    // description.trim()
-}
-
-// Abre a página do problema no site oficial
+// Abre a página HTML completa do problema no navegador
 function openProblemOnWeb() {
     window.open(`https://projecteuler.net/problem=${currentProblemId}`, '_blank');
 }
 
-// Avança para o próximo problema
-function goToNextProblem() {
+// Avança para o próximo nível
+async function goToNextProblem() {
     currentProblemId++;
     saveProgress();
-    displayCurrentProblem();
+    await fetchAndDisplayProblem(); // Busca e exibe o novo problema
 }
